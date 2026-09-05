@@ -92,7 +92,7 @@ Requirements:
 - Network access on first ChromaDB embedding-model initialization
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/IamSameerJoshi/minisense-agent.git
 cd minisense-agent
 
 python3 -m venv .venv
