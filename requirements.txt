@@ -9,6 +9,7 @@ sentence-transformers>=2.2.0
 
 # LLM & Agent Framework (plain SDK or LangGraph)
 openai>=1.20.0
+google-genai>=0.1.0
 python-dotenv>=1.0.0
 
 # Optional: CLI interface or lightweight API
