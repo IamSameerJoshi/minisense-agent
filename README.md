@@ -168,6 +168,15 @@ on a 1-5 scale**. In the included synthetic data, May's observed CSAT is about
 **3.27**, which is below the target and below the FAQ's **4.0** threshold for a
 mandatory regional root-cause review.
 
+## Tool Calling Example
+
+The `DataAgent` demonstrates tool calling through a typed Python boundary:
+`DataAgent.execute()` receives a validated `DataTaskSpec` and calls the
+`compute_survey_metrics()` tool with its date and business filters. The tool
+loads and filters the JSON data with Polars, computes the exact aggregates, and
+returns a `DataAgentResult`. This keeps arithmetic and raw records outside the
+LLM prompt; Gemini plans the call and narrates its typed result.
+
 ## Evaluation Checkpoints
 
 The following checks exercise retrieval and synthesis with representative
@@ -206,6 +215,10 @@ discrete eight-class taxonomy, such as `Positive - Food Quality` and
 - Use Llama 3.1 8B Instruct, or ModernBERT-Large when sub-15 ms classification
 	latency is required.
 - Use PEFT/LoRA with rank 16 and alpha 32 on attention and MLP projections.
+	LoRA is preferable to full fine-tuning because it keeps the base model
+	frozen, reduces GPU memory use, and produces a small swappable adapter.
+	QLoRA is an alternative when GPU memory is tighter; full fine-tuning would
+	be reserved for a substantially larger corpus and a stable taxonomy.
 - Train with Hugging Face TRL or Axolotl, FlashAttention-2, and PyTorch FSDP.
 - Start with AdamW, cosine scheduling, effective batch size 64, peak learning
 	rate `2e-4`, and early stopping over three epochs.
@@ -222,6 +235,8 @@ Serve the adapter with vLLM on an AWS `g5.xlarge`, keeping the frontier model
 as a fallback for low-confidence cases. Inject taxonomy classes dynamically
 through schemas rather than hardcoding them in prompts, and monitor incoming
 text for feature and embedding drift with two-sample Kolmogorov-Smirnov tests.
+The training and serving interfaces should accept versioned input and output
+schemas so taxonomy changes do not require rewriting the pipeline.
 
 This section is a future design proposal; the repository does not currently
 contain training, vLLM serving, or drift-monitoring code.
