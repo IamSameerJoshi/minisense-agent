@@ -96,10 +96,13 @@ git clone https://github.com/IamSameerJoshi/minisense-agent.git
 cd minisense-agent
 
 python3 -m venv .venv
+# On Windows: python -m venv .venv
 source .venv/bin/activate
+# On Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 cp .env.example .env
+# On Windows: copy .env.example .env
 ```
 
 Set the API key in `.env`:
