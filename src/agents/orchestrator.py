@@ -1,5 +1,5 @@
 import os
-import json
+from typing import Optional
 from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
@@ -9,15 +9,24 @@ from src.schemas import (
     RAGTaskSpec,
     DataAgentResult,
     RAGAgentResult,
-    OrchestratorResponse
+    OrchestratorResponse,
+    ComparisonTaskSpec,
+    ComparisonResult,
+    SummaryTaskSpec,
 )
 from src.agents.data_agent import DataAgent
 from src.agents.rag_agent import RAGAgent
+from src.agents.comparison_agent import ComparisonAgent
+from src.agents.summary_agent import SummaryAgent
 
 # Internal schema for Gemini's structured planning step
 class AgentPlan(BaseModel):
     data_spec: DataTaskSpec = Field(description="Plan parameters for the survey metrics tool")
     rag_spec: RAGTaskSpec = Field(description="Search parameters for the FAQ vector store")
+    comparison_spec: Optional[ComparisonTaskSpec] = Field(
+        default=None,
+        description="Period comparison parameters, or null when no comparison is needed",
+    )
 
 class Orchestrator:
     def __init__(self, model_name: str = "gemini-3.1-flash-lite"):
@@ -29,8 +38,10 @@ class Orchestrator:
         self.model_name = model_name
         self.data_agent = DataAgent()
         self.rag_agent = RAGAgent()
+        self.comparison_agent = ComparisonAgent(self.data_agent)
+        self.summary_agent = SummaryAgent(self.client, self.model_name)
 
-    def plan_tasks(self, user_query: str) -> tuple[DataTaskSpec, RAGTaskSpec]:
+    def plan_tasks(self, user_query: str) -> AgentPlan:
         """
         Translates a natural language question into typed task specs using Gemini.
         """
@@ -42,6 +53,8 @@ Constraints:
 - The survey dataset spans from 2026-04-01 to 2026-05-31.
 - 'data_spec' extracts start_date, end_date (YYYY-MM-DD or null), and metrics to compute.
 - 'rag_spec' defines the semantic search query and top_k to check business targets/policies.
+- 'comparison_spec' is required only when the user asks to compare two periods. It must
+    contain explicit current and previous date ranges; otherwise set it to null.
 
 User Question: "{user_query}"
 """
@@ -56,63 +69,56 @@ User Question: "{user_query}"
         )
 
         plan = AgentPlan.model_validate_json(response.text)
-        return plan.data_spec, plan.rag_spec
+        return plan
 
     def synthesize_narrative(
         self,
         user_query: str,
         data_result: DataAgentResult,
-        rag_result: RAGAgentResult
+        rag_result: RAGAgentResult,
+        comparison_result: Optional[ComparisonResult] = None,
     ) -> str:
         """
-        Produces a grounded executive narrative combining computed data and retrieved policy chunks.
+        Produces a grounded executive narrative through the SummaryAgent.
         """
-        context_text = "\n\n".join([f"[{c.chunk_id}]: {c.content}" for c in rag_result.retrieved_chunks])
-
-        prompt = f"""
-You are MiniSense, an executive survey analyst. Answer the user's business question.
-
-Ground your response strictly in the provided Survey Metrics and Business FAQ Context.
-Do NOT invent numbers or targets. Present the answer as a concise, professional executive narrative paragraph.
-
-User Question:
-{user_query}
-
-Survey Metrics (Computed deterministically):
-- Total Responses: {data_result.total_responses}
-- CSAT / Average Rating: {data_result.average_rating} / 5.0
-- Rating Distribution: {data_result.rating_distribution}
-- Top Themes: {[t.model_dump() for t in data_result.top_themes]}
-
-Business FAQ Context:
-{context_text}
-"""
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.2
+        result = self.summary_agent.execute(
+            SummaryTaskSpec(
+                question=user_query,
+                data_result=data_result,
+                rag_result=rag_result,
+                comparison_result=comparison_result,
             )
         )
-        return response.text.strip()
+        return result.narrative
 
     def run(self, user_query: str) -> OrchestratorResponse:
         """
         Full orchestration flow:
         1. Plan task specs with Gemini
-        2. Execute sub-agents (DataAgent + RAGAgent)
-        3. Synthesize narrative answer with Gemini
+        2. Execute DataAgent, optional ComparisonAgent, and RAGAgent
+        3. Synthesize the narrative through SummaryAgent
         """
-        data_spec, rag_spec = self.plan_tasks(user_query)
+        plan = self.plan_tasks(user_query)
 
-        data_result = self.data_agent.execute(data_spec)
-        rag_result = self.rag_agent.execute(rag_spec)
+        data_result = self.data_agent.execute(plan.data_spec)
+        comparison_result = (
+            self.comparison_agent.execute(plan.comparison_spec)
+            if plan.comparison_spec
+            else None
+        )
+        rag_result = self.rag_agent.execute(plan.rag_spec)
 
-        narrative = self.synthesize_narrative(user_query, data_result, rag_result)
+        narrative = self.synthesize_narrative(
+            user_query,
+            data_result,
+            rag_result,
+            comparison_result,
+        )
 
         return OrchestratorResponse(
             question=user_query,
             narrative_summary=narrative,
             data_metrics=data_result,
+            comparison_metrics=comparison_result,
             retrieved_context=rag_result.retrieved_chunks
         )

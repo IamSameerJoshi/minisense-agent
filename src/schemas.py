@@ -19,6 +19,21 @@ class RAGTaskSpec(BaseModel):
     query: str = Field(..., description="Semantic search query for the business FAQ/policy")
     top_k: int = Field(default=3, description="Number of context chunks to retrieve")
 
+class ComparisonTaskSpec(BaseModel):
+    """Structured instruction for comparing two survey periods."""
+    current_start: str = Field(..., description="Current period start date (YYYY-MM-DD)")
+    current_end: str = Field(..., description="Current period end date (YYYY-MM-DD)")
+    previous_start: str = Field(..., description="Previous period start date (YYYY-MM-DD)")
+    previous_end: str = Field(..., description="Previous period end date (YYYY-MM-DD)")
+    business_id: Optional[str] = Field(None, description="Optional business ID filter")
+
+class SummaryTaskSpec(BaseModel):
+    """Structured input for the final narrative synthesis."""
+    question: str
+    data_result: "DataAgentResult"
+    rag_result: "RAGAgentResult"
+    comparison_result: Optional["ComparisonResult"] = None
+
 # --- 2. Structured Outputs (Sub-Agents -> Orchestrator) ---
 
 class ThemeFrequency(BaseModel):
@@ -44,6 +59,20 @@ class RAGAgentResult(BaseModel):
     query: str
     retrieved_chunks: List[RetrievedChunk]
 
+class ComparisonResult(BaseModel):
+    """Structured period-over-period analysis returned by the ComparisonAgent."""
+    current_metrics: DataAgentResult
+    previous_metrics: DataAgentResult
+    average_rating_delta: float
+    response_count_delta: int
+    theme_changes: dict[str, int]
+    direction: Literal["improved", "declined", "unchanged"]
+
+class SummaryAgentResult(BaseModel):
+    """Structured narrative returned by the SummaryAgent."""
+    narrative: str
+    supporting_chunk_ids: List[str] = Field(default_factory=list)
+
 # --- 3. Final Synthesis Output ---
 
 class OrchestratorResponse(BaseModel):
@@ -51,4 +80,5 @@ class OrchestratorResponse(BaseModel):
     question: str
     narrative_summary: str
     data_metrics: Optional[DataAgentResult] = None
+    comparison_metrics: Optional[ComparisonResult] = None
     retrieved_context: Optional[List[RetrievedChunk]] = None

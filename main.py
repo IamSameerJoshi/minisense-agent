@@ -23,6 +23,11 @@ def main():
     print("DATA METRICS USED:")
     print("=" * 60)
     print(response.data_metrics.model_dump_json(indent=2))
+    if response.comparison_metrics:
+        print("\n" + "=" * 60)
+        print("COMPARISON METRICS USED:")
+        print("=" * 60)
+        print(response.comparison_metrics.model_dump_json(indent=2))
     print("\n" + "=" * 60)
     print("RETRIEVED FAQ CONTEXT:")
     print("=" * 60)
